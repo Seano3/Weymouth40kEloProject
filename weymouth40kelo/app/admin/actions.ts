@@ -4,7 +4,9 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/admin";
 import { syncEvent } from "@/lib/bcp/sync";
 import { recomputeRatings } from "@/lib/elo";
-import { createServiceClient, createSessionClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
+import { cookies } from "next/headers";
+import { ADMIN_COOKIE } from "@/lib/admin-token";
 import { revalidatePath, updateTag } from "next/cache";
 
 function extractBcpEventId(input: string): string {
@@ -61,7 +63,7 @@ export async function recomputeRatingsAction() {
 }
 
 export async function logoutAction() {
-  const supabase = await createSessionClient();
-  await supabase.auth.signOut();
+  const cookieStore = await cookies();
+  cookieStore.delete(ADMIN_COOKIE);
   redirect("/admin/login");
 }

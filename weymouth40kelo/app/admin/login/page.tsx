@@ -24,28 +24,24 @@ export default async function LoginPage({
           </p>
         )}
         <label className="flex flex-col gap-1 text-sm">
-          Email
+          PIN
           <input
-            name="email"
-            type="email"
-            required
-            className="rounded-md border border-black/15 px-3 py-2 dark:border-white/15 dark:bg-black"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Password
-          <input
-            name="password"
+            name="pin"
             type="password"
+            inputMode="numeric"
+            pattern="[0-9]{4}"
+            maxLength={4}
+            autoComplete="current-password"
+            autoFocus
             required
-            className="rounded-md border border-black/15 px-3 py-2 dark:border-white/15 dark:bg-black"
+            className="rounded-md border border-black/15 px-3 py-2 text-center text-lg tracking-[0.5em] dark:border-white/15 dark:bg-black"
           />
         </label>
         <button
           type="submit"
           className="mt-2 rounded-md bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
         >
-          Log in
+          Enter
         </button>
       </form>
     </div>
