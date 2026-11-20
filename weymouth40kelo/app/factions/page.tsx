@@ -95,28 +95,25 @@ export default async function FactionsPage() {
 }
 
 /**
- * Column order and short labels for known dispositions, matched by name
- * prefix. Anything BCP adds later is appended under its full name.
+ * All 11th edition Force Dispositions, in matrix order, so every row and
+ * column shows even before anyone has played it. A name from BCP replaces
+ * the canonical one when it matches by prefix (in case BCP's spelling
+ * differs); anything unrecognised is appended at the end.
  */
-const DISPOSITION_ORDER: [prefix: string, label: string][] = [
-  ["Priority", "Prio"],
-  ["Take", "Take"],
-  ["Recon", "Recon"],
-  ["Disrupt", "Disrupt"],
-  ["Purge", "Purge"],
+const DISPOSITIONS: [prefix: string, name: string][] = [
+  ["Priority", "Priority Assets"],
+  ["Take", "Take and Hold"],
+  ["Recon", "Reconnaissance"],
+  ["Disrupt", "Disruption"],
+  ["Purge", "Purge the Foe"],
 ];
 
-function orderDispositions(names: string[]): { name: string; label: string }[] {
-  const rank = (name: string) => {
-    const i = DISPOSITION_ORDER.findIndex(([prefix]) => name.startsWith(prefix));
-    return i === -1 ? DISPOSITION_ORDER.length : i;
-  };
-  return [...names]
-    .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
-    .map((name) => ({
-      name,
-      label: DISPOSITION_ORDER.find(([prefix]) => name.startsWith(prefix))?.[1] ?? name,
-    }));
+function orderDispositions(seen: string[]): string[] {
+  const names = DISPOSITIONS.map(
+    ([prefix, name]) => seen.find((s) => s.startsWith(prefix)) ?? name
+  );
+  const extras = seen.filter((s) => !names.includes(s)).sort();
+  return [...names, ...extras];
 }
 
 /** Green above 50%, red below, stronger the further from even. */
@@ -153,36 +150,35 @@ function DispositionMatrix({
             <tr className="text-zinc-500 dark:text-zinc-400">
               <th className="px-2 py-2 text-left text-xs font-medium">vs ↓ / as →</th>
               {cols.map((c) => (
-                <th key={c.name} title={c.name} className="px-2 py-2 font-medium">
-                  {c.label}
+                <th key={c} className="px-2 py-2 font-medium">
+                  {c}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {cols.map((row) => (
-              <tr key={row.name}>
+              <tr key={row}>
                 <th
                   scope="row"
-                  title={row.name}
                   className="px-2 py-2 text-left font-medium text-zinc-500 dark:text-zinc-400"
                 >
-                  {row.label}
+                  {row}
                 </th>
                 {cols.map((col) =>
-                  col.name === row.name ? (
+                  col === row ? (
                     <td
-                      key={col.name}
+                      key={col}
                       className={`${cellClass} bg-black/[0.03] text-xs text-zinc-400 dark:bg-white/[0.04] dark:text-zinc-500`}
                     >
                       Mirror
-                      <div>{matchups.mirrors[col.name] ?? 0} games</div>
+                      <div>{matchups.mirrors[col] ?? 0} games</div>
                     </td>
                   ) : (
                     <MatrixCell
-                      key={col.name}
+                      key={col}
                       className={cellClass}
-                      record={matchups.cells[col.name]?.[row.name]}
+                      record={matchups.cells[col]?.[row]}
                     />
                   )
                 )}
@@ -196,10 +192,10 @@ function DispositionMatrix({
                 Overall
               </th>
               {cols.map((col) => {
-                const o = overallByName.get(col.name);
+                const o = overallByName.get(col);
                 return (
                   <MatrixCell
-                    key={col.name}
+                    key={col}
                     className={`${cellClass} border-t-2 border-t-black/15 font-semibold dark:border-t-white/20`}
                     record={o}
                   />
