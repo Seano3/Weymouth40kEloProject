@@ -7,6 +7,7 @@ import {
   type MatchupRecord,
 } from "@/lib/data";
 import { orderDispositions } from "@/lib/dispositions";
+import { factionHref } from "@/lib/factions";
 import { SortableStatsTable } from "./sortable-stats-table";
 
 export const metadata: Metadata = {
@@ -55,12 +56,14 @@ export default async function FactionsPage() {
               <Highlight
                 label="Most played"
                 name={mostPlayed.name}
+                href={factionHref(mostPlayed.name)}
                 detail={`Played ${mostPlayed.gamesPlayed} times · ${mostPlayed.playShare}% of armies`}
               />
               {bestWinRate ? (
                 <Highlight
                   label={`Best win rate (${MIN_GAMES}+ games)`}
                   name={bestWinRate.name}
+                  href={factionHref(bestWinRate.name)}
                   detail={`${bestWinRate.winRate}% · ${record(bestWinRate)}`}
                 />
               ) : (
@@ -75,7 +78,7 @@ export default async function FactionsPage() {
             <SortableStatsTable
               title="By Faction"
               column="Faction"
-              rows={factions}
+              rows={factions.map((f) => ({ ...f, href: factionHref(f.name) }))}
               minGames={MIN_GAMES}
             />
 
@@ -233,17 +236,27 @@ function Highlight({
   label,
   name,
   detail,
+  href,
 }: {
   label: string;
   name: string;
   detail: string;
+  href?: string;
 }) {
   return (
     <div className="rounded-md border border-black/5 px-4 py-3 dark:border-white/10">
       <div className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
         {label}
       </div>
-      <div className="mt-1 text-xl font-semibold text-black dark:text-zinc-50">{name}</div>
+      <div className="mt-1 text-xl font-semibold text-black dark:text-zinc-50">
+        {href ? (
+          <Link href={href} className="hover:underline">
+            {name}
+          </Link>
+        ) : (
+          name
+        )}
+      </div>
       <div className="text-sm text-zinc-500 dark:text-zinc-400">{detail}</div>
     </div>
   );

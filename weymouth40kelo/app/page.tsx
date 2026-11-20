@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getLeaderboard, getRecentGames } from "@/lib/data";
+import { RecentGamesList } from "./recent-games-list";
 
 export default async function Home() {
   const [leaderboard, recentGames] = await Promise.all([
@@ -70,26 +71,7 @@ export default async function Home() {
             <h2 className="mb-3 text-lg font-semibold text-black dark:text-zinc-50">
               Recent Results
             </h2>
-            <ul className="flex flex-col gap-2 text-sm">
-              {recentGames.map((g) => (
-                <li
-                  key={g.id}
-                  className="flex items-center justify-between rounded-md border border-black/5 px-3 py-2 dark:border-white/10"
-                >
-                  <span className="flex items-start gap-2 text-black dark:text-zinc-50">
-                    <PlayerWithFaction name={g.player1Name} faction={g.player1Faction} />
-                    <span className="whitespace-nowrap">
-                      {g.player1Score} – {g.player2Score}
-                    </span>
-                    <PlayerWithFaction name={g.player2Name} faction={g.player2Faction} />
-                  </span>
-                  <span className="shrink-0 pl-3 text-right text-zinc-500 dark:text-zinc-400">
-                    {g.eventName}
-                    {g.round !== null && ` · R${g.round}`}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <RecentGamesList games={recentGames} />
           </section>
         )}
 
@@ -115,16 +97,5 @@ export default async function Home() {
         </div>
       </main>
     </div>
-  );
-}
-
-function PlayerWithFaction({ name, faction }: { name: string; faction: string | null }) {
-  return (
-    <span>
-      {name}
-      {faction && (
-        <span className="block text-xs text-zinc-500 dark:text-zinc-400">{faction}</span>
-      )}
-    </span>
   );
 }

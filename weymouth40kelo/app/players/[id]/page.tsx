@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPlayerDetail } from "@/lib/data";
+import { factionHref } from "@/lib/factions";
 import { SortableStatsTable } from "@/app/factions/sortable-stats-table";
 
 export default function PlayerPage({
@@ -67,7 +68,7 @@ async function PlayerContent({
           <SortableStatsTable
             title="By Faction"
             column="Faction"
-            rows={player.factions}
+            rows={player.factions.map((f) => ({ ...f, href: factionHref(f.name) }))}
             minGames={0}
           />
           {player.gamesWithoutFaction > 0 && (

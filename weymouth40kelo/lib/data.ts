@@ -2,6 +2,7 @@ import "server-only";
 import { cacheTag } from "next/cache";
 import { createServiceClient } from "@/lib/supabase/server";
 import { compareGamesChronologically } from "@/lib/elo";
+import { factionHref, factionSlug } from "@/lib/factions";
 
 /** Shown in place of an event name for manually added games. */
 export const CASUAL_GAME_NAME = "Casual game";
@@ -360,6 +361,8 @@ export type ArmyStat = {
   mirrors: number;
   /** wins / non-mirror games, as a percentage; null if only mirrors. */
   winRate: number | null;
+  /** Where clicking the row goes, if anywhere. */
+  href?: string;
 };
 
 export type MatchupRecord = { wins: number; losses: number; draws: number };
@@ -396,9 +399,9 @@ type ArmyGameRow = {
  * since they always yield exactly one win and one loss for that group.
  * Draws count as non-wins, matching the leaderboard.
  */
-function tallyArmies(
-  games: ArmyGameRow[],
-  key: (g: ArmyGameRow) => [string | null, string | null]
+function tallyArmies<G extends ArmyGameRow>(
+  games: G[],
+  key: (g: G) => [string | null, string | null]
 ): ArmyStat[] {
   const byName = new Map<string, Omit<ArmyStat, "playShare" | "winRate">>();
   const entry = (name: string) => {
@@ -516,5 +519,116 @@ export async function getFactionStats(): Promise<FactionStats> {
     dispositionMatchups: tallyMatchups(games),
     gamesWithFaction: games.filter((g) => g.player1_faction || g.player2_faction).length,
     totalGames: games.length,
+  };
+}
+
+export type FactionGame = RecentGame & { eventDate: string | null };
+
+export type FactionDetail = {
+  name: string;
+  /** This faction's row from the site-wide faction stats. */
+  overall: ArmyStat;
+  /** Registered players who've used it, most games first; links to profiles. */
+  players: ArmyStat[];
+  /** Appearances by players not on the leaderboard (shown as a count only). */
+  unregisteredAppearances: number;
+  dispositions: ArmyStat[];
+  recentGames: FactionGame[];
+};
+
+type FactionDetailRow = ArmyGameRow & {
+  id: string;
+  round: number | null;
+  played_on: string | null;
+  created_at: string;
+  player1_id: string;
+  player2_id: string;
+  events: { name: string | null; event_date: string | null } | null;
+  player1: { display_name: string; visible: boolean } | null;
+  player2: { display_name: string; visible: boolean } | null;
+};
+
+/**
+ * Everything on a faction's page, looked up by its URL slug. Returns null
+ * for a slug that matches no faction seen in a synced or added game.
+ */
+export async function getFactionDetail(
+  slug: string,
+  recentLimit = 15
+): Promise<FactionDetail | null> {
+  "use cache";
+  cacheTag("leaderboard");
+
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("games")
+    .select(
+      "id, round, played_on, created_at, player1_id, player2_id, player1_score, player2_score, player1_faction, player2_faction, player1_sub_faction, player2_sub_faction, events(name, event_date), player1:player1_id(display_name, visible), player2:player2_id(display_name, visible)"
+    );
+  if (error) throw error;
+  const games = (data ?? []) as unknown as FactionDetailRow[];
+
+  const allFactions = tallyArmies(games, (g) => [g.player1_faction, g.player2_faction]);
+  const overall = allFactions.find((f) => factionSlug(f.name) === slug);
+  if (!overall) return null;
+  const name = overall.name;
+
+  const withFaction = games.filter(
+    (g) => g.player1_faction === name || g.player2_faction === name
+  );
+  // Only this faction's side of each game counts below.
+  const side = <T,>(g: FactionDetailRow, v1: T, v2: T): [T | null, T | null] => [
+    g.player1_faction === name ? v1 : null,
+    g.player2_faction === name ? v2 : null,
+  ];
+
+  // Keyed by player id: a faction mirror is two different players, so each
+  // side's result counts normally for that player.
+  const visibleNames = new Map<string, string>();
+  let unregisteredAppearances = 0;
+  for (const g of withFaction) {
+    for (const [id, player, faction] of [
+      [g.player1_id, g.player1, g.player1_faction],
+      [g.player2_id, g.player2, g.player2_faction],
+    ] as const) {
+      if (faction !== name) continue;
+      if (player?.visible) visibleNames.set(id, player.display_name);
+      else unregisteredAppearances++;
+    }
+  }
+  const players = tallyArmies(withFaction, (g) => {
+    const [a, b] = side(g, g.player1_id, g.player2_id);
+    return [a && visibleNames.has(a) ? a : null, b && visibleNames.has(b) ? b : null];
+  }).map((p) => ({ ...p, name: visibleNames.get(p.name)!, href: `/players/${p.name}` }));
+
+  const dispositions = tallyArmies(withFaction, (g) =>
+    side(g, g.player1_sub_faction, g.player2_sub_faction)
+  );
+
+  const hidden = (p: FactionDetailRow["player1"]) =>
+    p?.visible ? p.display_name : HIDDEN_PLAYER_NAME;
+  const recentGames = [...withFaction]
+    .sort((a, b) => compareGamesChronologically(b, a))
+    .slice(0, recentLimit)
+    .map((g) => ({
+      id: g.id,
+      eventName: g.events?.name ?? (g.played_on ? CASUAL_GAME_NAME : "Unknown event"),
+      eventDate: g.events?.event_date ?? g.played_on,
+      round: g.round,
+      player1Name: hidden(g.player1),
+      player2Name: hidden(g.player2),
+      player1Score: g.player1_score,
+      player2Score: g.player2_score,
+      player1Faction: g.player1_faction,
+      player2Faction: g.player2_faction,
+    }));
+
+  return {
+    name,
+    overall: { ...overall, href: factionHref(name) },
+    players,
+    unregisteredAppearances,
+    dispositions,
+    recentGames,
   };
 }

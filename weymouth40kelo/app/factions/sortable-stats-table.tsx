@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import type { ArmyStat } from "@/lib/data";
 
 type SortKey = "name" | "gamesPlayed" | "record" | "winRate";
@@ -105,9 +106,15 @@ export function SortableStatsTable({
         </thead>
         <tbody>
           {sorted.map((r) => (
-            <tr key={r.name} className="border-b border-black/5 dark:border-white/5">
+            <tr key={r.href ?? r.name} className="border-b border-black/5 dark:border-white/5">
               <td className="py-2 pr-4 font-medium text-black dark:text-zinc-50">
-                {r.name}
+                {r.href ? (
+                  <Link href={r.href} className="hover:underline">
+                    {r.name}
+                  </Link>
+                ) : (
+                  r.name
+                )}
                 {r.mirrors > 0 && (
                   <span className="ml-2 text-xs font-normal text-zinc-500 dark:text-zinc-400">
                     {r.mirrors} mirror{r.mirrors === 1 ? "" : "s"}
