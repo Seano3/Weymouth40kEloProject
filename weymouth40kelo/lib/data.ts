@@ -144,6 +144,8 @@ export type PlayerMatch = {
   round: number;
   opponentName: string;
   opponentEloBefore: number;
+  /** The player's own faction this game, if they submitted a list. */
+  faction: string | null;
   result: "W" | "L" | "D";
   ownScore: number;
   opponentScore: number;
@@ -160,6 +162,9 @@ export type PlayerDetail = {
   losses: number;
   draws: number;
   matches: PlayerMatch[];
+  /** The player's results per faction they've played. */
+  factions: ArmyStat[];
+  gamesWithoutFaction: number;
 };
 
 export async function getPlayerDetail(playerId: string): Promise<PlayerDetail | null> {
@@ -179,7 +184,7 @@ export async function getPlayerDetail(playerId: string): Promise<PlayerDetail | 
   const { data: ownHistory, error: historyError } = await supabase
     .from("elo_history")
     .select(
-      "game_id, delta, rating_after, games(round, player1_id, player2_id, player1_score, player2_score, created_at, events(name, event_date))"
+      "game_id, delta, rating_after, games(round, player1_id, player2_id, player1_score, player2_score, player1_faction, player2_faction, created_at, events(name, event_date))"
     )
     .eq("player_id", playerId);
   if (historyError) throw historyError;
@@ -194,6 +199,8 @@ export async function getPlayerDetail(playerId: string): Promise<PlayerDetail | 
       player2_id: string;
       player1_score: number;
       player2_score: number;
+      player1_faction: string | null;
+      player2_faction: string | null;
       created_at: string;
       events: { name: string | null; event_date: string | null } | null;
     } | null;
@@ -250,6 +257,7 @@ export async function getPlayerDetail(playerId: string): Promise<PlayerDetail | 
     const opponentId = isPlayer1 ? game.player2_id : game.player1_id;
     const ownScore = isPlayer1 ? game.player1_score : game.player2_score;
     const opponentScore = isPlayer1 ? game.player2_score : game.player1_score;
+    const faction = isPlayer1 ? game.player1_faction : game.player2_faction;
 
     if (ownScore > opponentScore) wins++;
     else if (ownScore < opponentScore) losses++;
@@ -267,6 +275,7 @@ export async function getPlayerDetail(playerId: string): Promise<PlayerDetail | 
       opponentEloBefore: Math.round(
         opponentRatingBefore.get(`${row.game_id}:${opponentId}`) ?? 1500
       ),
+      faction,
       result: ownScore > opponentScore ? "W" : ownScore < opponentScore ? "L" : "D",
       ownScore,
       opponentScore,
@@ -284,7 +293,48 @@ export async function getPlayerDetail(playerId: string): Promise<PlayerDetail | 
     losses,
     draws,
     matches,
+    ...playerFactionStats(matches),
   };
+}
+
+/**
+ * A player's record per faction. Unlike the site-wide stats, mirror matches
+ * are ordinary wins or losses here, so every game counts toward win rate.
+ */
+function playerFactionStats(
+  matches: PlayerMatch[]
+): Pick<PlayerDetail, "factions" | "gamesWithoutFaction"> {
+  const byFaction = new Map<string, { wins: number; losses: number; draws: number }>();
+  let gamesWithoutFaction = 0;
+
+  for (const m of matches) {
+    if (!m.faction) {
+      gamesWithoutFaction++;
+      continue;
+    }
+    const s = byFaction.get(m.faction) ?? { wins: 0, losses: 0, draws: 0 };
+    if (m.result === "W") s.wins++;
+    else if (m.result === "L") s.losses++;
+    else s.draws++;
+    byFaction.set(m.faction, s);
+  }
+
+  const withFaction = matches.length - gamesWithoutFaction;
+  const factions: ArmyStat[] = [...byFaction.entries()]
+    .map(([name, s]) => {
+      const games = s.wins + s.losses + s.draws;
+      return {
+        name,
+        ...s,
+        gamesPlayed: games,
+        playShare: Math.round((games / withFaction) * 1000) / 10,
+        mirrors: 0,
+        winRate: Math.round((s.wins / games) * 1000) / 10,
+      };
+    })
+    .sort((a, b) => b.gamesPlayed - a.gamesPlayed || a.name.localeCompare(b.name));
+
+  return { factions, gamesWithoutFaction };
 }
 
 export type ArmyStat = {

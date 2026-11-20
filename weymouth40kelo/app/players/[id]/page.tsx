@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPlayerDetail } from "@/lib/data";
+import { SortableStatsTable } from "@/app/factions/sortable-stats-table";
 
 export default function PlayerPage({
   params,
@@ -60,6 +61,24 @@ async function PlayerContent({
           <div className="text-zinc-500 dark:text-zinc-400">Games Played</div>
         </div>
       </section>
+
+      {player.factions.length > 0 && (
+        <div>
+          <SortableStatsTable
+            title="By Faction"
+            column="Faction"
+            rows={player.factions}
+            minGames={0}
+          />
+          {player.gamesWithoutFaction > 0 && (
+            <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+              {player.gamesWithoutFaction} game
+              {player.gamesWithoutFaction === 1 ? " has" : "s have"} no faction data,
+              because no list was submitted on BCP.
+            </p>
+          )}
+        </div>
+      )}
 
       <section>
         <h2 className="mb-3 text-lg font-semibold text-black dark:text-zinc-50">
