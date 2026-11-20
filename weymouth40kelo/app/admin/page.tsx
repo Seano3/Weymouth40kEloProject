@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { createServiceClient } from "@/lib/supabase/server";
+import { ResyncButton } from "./resync-button";
 import {
   syncEventAction,
   toggleVisibilityAction,
@@ -19,9 +21,9 @@ export const instant = false;
 export default async function AdminPage({
   searchParams,
 }: {
-  searchParams: Promise<{ message?: string; error?: string }>;
+  searchParams: Promise<{ message?: string; error?: string; synced?: string }>;
 }) {
-  const { message, error } = await searchParams;
+  const { message, error, synced } = await searchParams;
   const supabase = createServiceClient();
 
   const { data: players } = await supabase
@@ -43,6 +45,9 @@ export default async function AdminPage({
   return (
     <div className="flex flex-1 justify-center bg-zinc-50 dark:bg-black">
       <main className="flex w-full max-w-3xl flex-col gap-8 py-12 px-6">
+        <Link href="/" className="-mb-4 text-sm text-zinc-500 underline dark:text-zinc-400">
+          ← Leaderboard
+        </Link>
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold text-black dark:text-zinc-50">
             Admin
@@ -102,11 +107,19 @@ export default async function AdminPage({
                     {e.name ?? e.bcp_event_id}
                     {e.event_date ? ` · ${e.event_date}` : ""}
                   </span>
-                  <form action={syncEventAction}>
+                  <form action={syncEventAction} className="flex items-center gap-2">
+                    {synced === e.bcp_event_id && (
+                      <span
+                        role="img"
+                        aria-label="Synced"
+                        title="Synced"
+                        className="text-sm font-semibold text-green-600 dark:text-green-400"
+                      >
+                        ✓
+                      </span>
+                    )}
                     <input type="hidden" name="bcpEvent" value={e.bcp_event_id} />
-                    <button className="text-xs text-zinc-500 underline">
-                      Re-sync
-                    </button>
+                    <ResyncButton />
                   </form>
                 </li>
               ))}

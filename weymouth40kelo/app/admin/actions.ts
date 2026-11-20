@@ -27,13 +27,11 @@ export async function syncEventAction(formData: FormData) {
   const raw = String(formData.get("bcpEvent") ?? "");
   const bcpEventId = extractBcpEventId(raw);
 
+  // redirect() works by throwing, so it must stay outside the try/catch or
+  // the catch would turn every successful sync into an error message.
+  let result: Awaited<ReturnType<typeof syncEvent>>;
   try {
-    const result = await syncEvent(bcpEventId);
-    redirect(
-      `/admin?message=${encodeURIComponent(
-        `Synced "${result.eventName}": ${result.playersAdded} new players, ${result.gamesAdded} new games (${result.gamesSkipped} already synced), ${result.gamesWithFaction} with faction data.`
-      )}`
-    );
+    result = await syncEvent(bcpEventId);
   } catch (err) {
     redirect(
       `/admin?error=${encodeURIComponent(
@@ -41,6 +39,13 @@ export async function syncEventAction(formData: FormData) {
       )}`
     );
   }
+
+  // `synced` marks which event to show the green check next to.
+  redirect(
+    `/admin?synced=${encodeURIComponent(bcpEventId)}&message=${encodeURIComponent(
+      `Synced "${result.eventName}": ${result.playersAdded} new players, ${result.gamesAdded} new games (${result.gamesSkipped} already synced), ${result.gamesWithFaction} with faction data.`
+    )}`
+  );
 }
 
 export async function toggleVisibilityAction(formData: FormData) {
