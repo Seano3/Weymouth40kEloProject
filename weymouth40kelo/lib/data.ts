@@ -287,11 +287,11 @@ export async function getPlayerDetail(playerId: string): Promise<PlayerDetail | 
   };
 }
 
-export type FactionStat = {
-  faction: string;
-  /** Every game this faction appeared in, mirrors included. */
+export type ArmyStat = {
+  name: string;
+  /** Every army of this kind taken to a game, mirrors counted twice. */
   gamesPlayed: number;
-  /** Share of all faction appearances, as a percentage. */
+  /** Share of all armies with this field set, as a percentage. */
   playShare: number;
   wins: number;
   losses: number;
@@ -301,62 +301,73 @@ export type FactionStat = {
   winRate: number | null;
 };
 
+export type MatchupRecord = { wins: number; losses: number; draws: number };
+
+export type DispositionMatchups = {
+  /** Every disposition seen in at least one game. */
+  names: string[];
+  /** cells[own][opponent] = own's record vs opponent (mirrors on the diagonal). */
+  cells: Record<string, Record<string, MatchupRecord>>;
+  /** Mirror game counts per disposition. */
+  mirrors: Record<string, number>;
+};
+
 export type FactionStats = {
-  factions: FactionStat[];
+  factions: ArmyStat[];
+  dispositions: ArmyStat[];
+  dispositionMatchups: DispositionMatchups;
   gamesWithFaction: number;
   totalGames: number;
 };
 
+type ArmyGameRow = {
+  player1_faction: string | null;
+  player1_sub_faction: string | null;
+  player2_faction: string | null;
+  player2_sub_faction: string | null;
+  player1_score: number;
+  player2_score: number;
+};
+
 /**
- * Aggregates faction results across all synced games. Mirror matches count
- * toward games played but are excluded from win rate, since they always
- * yield exactly one win and one loss for that faction. Draws count as
- * non-wins, matching the leaderboard. Only aggregate counts are exposed, so
- * hidden players' games are included.
+ * Tallies results grouped by one side of each game (faction or disposition).
+ * Mirror matches count toward games played but are excluded from win rate,
+ * since they always yield exactly one win and one loss for that group.
+ * Draws count as non-wins, matching the leaderboard.
  */
-export async function getFactionStats(): Promise<FactionStats> {
-  "use cache";
-  cacheTag("leaderboard");
-
-  const supabase = createServiceClient();
-  const { data, error } = await supabase
-    .from("games")
-    .select("player1_faction, player2_faction, player1_score, player2_score");
-  if (error) throw error;
-
-  const games = data ?? [];
-  const byFaction = new Map<string, Omit<FactionStat, "playShare" | "winRate">>();
-  const entry = (faction: string) => {
-    let s = byFaction.get(faction);
+function tallyArmies(
+  games: ArmyGameRow[],
+  key: (g: ArmyGameRow) => [string | null, string | null]
+): ArmyStat[] {
+  const byName = new Map<string, Omit<ArmyStat, "playShare" | "winRate">>();
+  const entry = (name: string) => {
+    let s = byName.get(name);
     if (!s) {
-      s = { faction, gamesPlayed: 0, wins: 0, losses: 0, draws: 0, mirrors: 0 };
-      byFaction.set(faction, s);
+      s = { name, gamesPlayed: 0, wins: 0, losses: 0, draws: 0, mirrors: 0 };
+      byName.set(name, s);
     }
     return s;
   };
 
-  let gamesWithFaction = 0;
   let appearances = 0;
 
   for (const g of games) {
-    const f1: string | null = g.player1_faction;
-    const f2: string | null = g.player2_faction;
-    if (f1 || f2) gamesWithFaction++;
+    const [k1, k2] = key(g);
 
-    if (f1 && f1 === f2) {
-      const s = entry(f1);
+    if (k1 && k1 === k2) {
+      const s = entry(k1);
       s.gamesPlayed += 2;
       s.mirrors++;
       appearances += 2;
       continue;
     }
 
-    for (const [faction, own, opp] of [
-      [f1, g.player1_score, g.player2_score],
-      [f2, g.player2_score, g.player1_score],
+    for (const [name, own, opp] of [
+      [k1, g.player1_score, g.player2_score],
+      [k2, g.player2_score, g.player1_score],
     ] as const) {
-      if (!faction) continue;
-      const s = entry(faction);
+      if (!name) continue;
+      const s = entry(name);
       s.gamesPlayed++;
       appearances++;
       if (own > opp) s.wins++;
@@ -365,7 +376,7 @@ export async function getFactionStats(): Promise<FactionStats> {
     }
   }
 
-  const factions: FactionStat[] = [...byFaction.values()]
+  return [...byName.values()]
     .map((s) => {
       const decided = s.wins + s.losses + s.draws;
       return {
@@ -374,7 +385,75 @@ export async function getFactionStats(): Promise<FactionStats> {
         winRate: decided > 0 ? Math.round((s.wins / decided) * 1000) / 10 : null,
       };
     })
-    .sort((a, b) => b.gamesPlayed - a.gamesPlayed || a.faction.localeCompare(b.faction));
+    .sort((a, b) => b.gamesPlayed - a.gamesPlayed || a.name.localeCompare(b.name));
+}
 
-  return { factions, gamesWithFaction, totalGames: games.length };
+/**
+ * Head-to-head disposition records. Only games where both players' dispositions
+ * are known count, so per-cell totals can sum to less than the overall stats.
+ */
+function tallyMatchups(games: ArmyGameRow[]): DispositionMatchups {
+  const cells: DispositionMatchups["cells"] = {};
+  const mirrors: DispositionMatchups["mirrors"] = {};
+  const names = new Set<string>();
+  const cell = (own: string, opp: string) => {
+    cells[own] ??= {};
+    return (cells[own][opp] ??= { wins: 0, losses: 0, draws: 0 });
+  };
+
+  for (const g of games) {
+    const d1 = g.player1_sub_faction;
+    const d2 = g.player2_sub_faction;
+    if (d1) names.add(d1);
+    if (d2) names.add(d2);
+    if (!d1 || !d2) continue;
+
+    if (d1 === d2) {
+      mirrors[d1] = (mirrors[d1] ?? 0) + 1;
+      continue;
+    }
+
+    const a = cell(d1, d2);
+    const b = cell(d2, d1);
+    if (g.player1_score > g.player2_score) {
+      a.wins++;
+      b.losses++;
+    } else if (g.player1_score < g.player2_score) {
+      a.losses++;
+      b.wins++;
+    } else {
+      a.draws++;
+      b.draws++;
+    }
+  }
+
+  return { names: [...names], cells, mirrors };
+}
+
+/**
+ * Faction and disposition (BCP's "subFaction") results across all synced
+ * games. Only aggregate counts are exposed, so hidden players' games are
+ * included.
+ */
+export async function getFactionStats(): Promise<FactionStats> {
+  "use cache";
+  cacheTag("leaderboard");
+
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("games")
+    .select(
+      "player1_faction, player1_sub_faction, player2_faction, player2_sub_faction, player1_score, player2_score"
+    );
+  if (error) throw error;
+
+  const games = (data ?? []) as ArmyGameRow[];
+
+  return {
+    factions: tallyArmies(games, (g) => [g.player1_faction, g.player2_faction]),
+    dispositions: tallyArmies(games, (g) => [g.player1_sub_faction, g.player2_sub_faction]),
+    dispositionMatchups: tallyMatchups(games),
+    gamesWithFaction: games.filter((g) => g.player1_faction || g.player2_faction).length,
+    totalGames: games.length,
+  };
 }
