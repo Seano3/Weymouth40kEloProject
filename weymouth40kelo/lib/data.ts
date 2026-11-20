@@ -286,3 +286,95 @@ export async function getPlayerDetail(playerId: string): Promise<PlayerDetail | 
     matches,
   };
 }
+
+export type FactionStat = {
+  faction: string;
+  /** Every game this faction appeared in, mirrors included. */
+  gamesPlayed: number;
+  /** Share of all faction appearances, as a percentage. */
+  playShare: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  mirrors: number;
+  /** wins / non-mirror games, as a percentage; null if only mirrors. */
+  winRate: number | null;
+};
+
+export type FactionStats = {
+  factions: FactionStat[];
+  gamesWithFaction: number;
+  totalGames: number;
+};
+
+/**
+ * Aggregates faction results across all synced games. Mirror matches count
+ * toward games played but are excluded from win rate, since they always
+ * yield exactly one win and one loss for that faction. Draws count as
+ * non-wins, matching the leaderboard. Only aggregate counts are exposed, so
+ * hidden players' games are included.
+ */
+export async function getFactionStats(): Promise<FactionStats> {
+  "use cache";
+  cacheTag("leaderboard");
+
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("games")
+    .select("player1_faction, player2_faction, player1_score, player2_score");
+  if (error) throw error;
+
+  const games = data ?? [];
+  const byFaction = new Map<string, Omit<FactionStat, "playShare" | "winRate">>();
+  const entry = (faction: string) => {
+    let s = byFaction.get(faction);
+    if (!s) {
+      s = { faction, gamesPlayed: 0, wins: 0, losses: 0, draws: 0, mirrors: 0 };
+      byFaction.set(faction, s);
+    }
+    return s;
+  };
+
+  let gamesWithFaction = 0;
+  let appearances = 0;
+
+  for (const g of games) {
+    const f1: string | null = g.player1_faction;
+    const f2: string | null = g.player2_faction;
+    if (f1 || f2) gamesWithFaction++;
+
+    if (f1 && f1 === f2) {
+      const s = entry(f1);
+      s.gamesPlayed += 2;
+      s.mirrors++;
+      appearances += 2;
+      continue;
+    }
+
+    for (const [faction, own, opp] of [
+      [f1, g.player1_score, g.player2_score],
+      [f2, g.player2_score, g.player1_score],
+    ] as const) {
+      if (!faction) continue;
+      const s = entry(faction);
+      s.gamesPlayed++;
+      appearances++;
+      if (own > opp) s.wins++;
+      else if (own < opp) s.losses++;
+      else s.draws++;
+    }
+  }
+
+  const factions: FactionStat[] = [...byFaction.values()]
+    .map((s) => {
+      const decided = s.wins + s.losses + s.draws;
+      return {
+        ...s,
+        playShare: Math.round((s.gamesPlayed / appearances) * 1000) / 10,
+        winRate: decided > 0 ? Math.round((s.wins / decided) * 1000) / 10 : null,
+      };
+    })
+    .sort((a, b) => b.gamesPlayed - a.gamesPlayed || a.faction.localeCompare(b.faction));
+
+  return { factions, gamesWithFaction, totalGames: games.length };
+}

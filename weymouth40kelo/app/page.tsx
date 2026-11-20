@@ -89,7 +89,13 @@ export default async function Home() {
           </section>
         )}
 
-        <div className="flex justify-center">
+        <div className="flex flex-wrap justify-center gap-3">
+          <Link
+            href="/factions"
+            className="rounded-md border border-black/15 px-4 py-2 text-sm font-medium text-black hover:bg-black/5 dark:border-white/15 dark:text-zinc-50 dark:hover:bg-white/5"
+          >
+            Faction stats
+          </Link>
           <Link
             href="/register"
             className="rounded-md border border-black/15 px-4 py-2 text-sm font-medium text-black hover:bg-black/5 dark:border-white/15 dark:text-zinc-50 dark:hover:bg-white/5"
