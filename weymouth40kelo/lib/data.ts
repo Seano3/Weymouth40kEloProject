@@ -76,6 +76,8 @@ export type RecentGame = {
   player2Name: string;
   player1Score: number;
   player2Score: number;
+  player1Faction: string | null;
+  player2Faction: string | null;
 };
 
 const HIDDEN_PLAYER_NAME = "Hidden Player";
@@ -91,7 +93,7 @@ export async function getRecentGames(limit = 10): Promise<RecentGame[]> {
   const { data, error } = await supabase
     .from("games")
     .select(
-      "id, round, player1_score, player2_score, events(name, event_date), player1:player1_id(display_name, visible), player2:player2_id(display_name, visible)"
+      "id, round, player1_score, player2_score, player1_faction, player2_faction, events(name, event_date), player1:player1_id(display_name, visible), player2:player2_id(display_name, visible)"
     );
   if (error) throw error;
 
@@ -101,6 +103,8 @@ export async function getRecentGames(limit = 10): Promise<RecentGame[]> {
       round: number;
       player1_score: number;
       player2_score: number;
+      player1_faction: string | null;
+      player2_faction: string | null;
       events: { name: string | null; event_date: string | null } | null;
       player1: { display_name: string; visible: boolean } | null;
       player2: { display_name: string; visible: boolean } | null;
@@ -116,6 +120,8 @@ export async function getRecentGames(limit = 10): Promise<RecentGame[]> {
       player2Name: row.player2?.display_name ?? "Unknown",
       player1Score: row.player1_score,
       player2Score: row.player2_score,
+      player1Faction: row.player1_faction,
+      player2Faction: row.player2_faction,
     };
   });
 
@@ -134,6 +140,8 @@ export async function getRecentGames(limit = 10): Promise<RecentGame[]> {
       player2Name: r.player2Visible ? r.player2Name : HIDDEN_PLAYER_NAME,
       player1Score: r.player1Score,
       player2Score: r.player2Score,
+      player1Faction: r.player1Faction,
+      player2Faction: r.player2Faction,
     }));
 }
 
@@ -146,6 +154,7 @@ export type PlayerMatch = {
   opponentEloBefore: number;
   /** The player's own faction this game, if they submitted a list. */
   faction: string | null;
+  opponentFaction: string | null;
   result: "W" | "L" | "D";
   ownScore: number;
   opponentScore: number;
@@ -276,6 +285,7 @@ export async function getPlayerDetail(playerId: string): Promise<PlayerDetail | 
         opponentRatingBefore.get(`${row.game_id}:${opponentId}`) ?? 1500
       ),
       faction,
+      opponentFaction: isPlayer1 ? game.player2_faction : game.player1_faction,
       result: ownScore > opponentScore ? "W" : ownScore < opponentScore ? "L" : "D",
       ownScore,
       opponentScore,

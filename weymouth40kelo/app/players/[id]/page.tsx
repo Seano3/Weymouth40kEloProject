@@ -94,6 +94,7 @@ async function PlayerContent({
               <thead>
                 <tr className="border-b border-black/10 text-zinc-500 dark:border-white/10 dark:text-zinc-400">
                   <th className="py-2 pr-4 font-medium">Event / Round</th>
+                  <th className="py-2 pr-4 font-medium">Faction</th>
                   <th className="py-2 pr-4 font-medium">Opponent</th>
                   <th className="py-2 pr-4 font-medium text-right">Opp Elo</th>
                   <th className="py-2 pr-4 font-medium text-center">Result</th>
@@ -116,8 +117,16 @@ async function PlayerContent({
                         </span>
                       )}
                     </td>
+                    <td className="py-2 pr-4 text-zinc-500 dark:text-zinc-400">
+                      {m.faction ?? "–"}
+                    </td>
                     <td className="py-2 pr-4 text-black dark:text-zinc-50">
                       {m.opponentName}
+                      {m.opponentFaction && (
+                        <span className="block text-xs text-zinc-500 dark:text-zinc-400">
+                          {m.opponentFaction}
+                        </span>
+                      )}
                     </td>
                     <td className="py-2 pr-4 text-right text-zinc-500 dark:text-zinc-400">
                       {m.opponentEloBefore}

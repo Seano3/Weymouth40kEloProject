@@ -76,11 +76,14 @@ export default async function Home() {
                   key={g.id}
                   className="flex items-center justify-between rounded-md border border-black/5 px-3 py-2 dark:border-white/10"
                 >
-                  <span className="text-black dark:text-zinc-50">
-                    {g.player1Name} {g.player1Score} – {g.player2Score}{" "}
-                    {g.player2Name}
+                  <span className="flex items-start gap-2 text-black dark:text-zinc-50">
+                    <PlayerWithFaction name={g.player1Name} faction={g.player1Faction} />
+                    <span className="whitespace-nowrap">
+                      {g.player1Score} – {g.player2Score}
+                    </span>
+                    <PlayerWithFaction name={g.player2Name} faction={g.player2Faction} />
                   </span>
-                  <span className="text-zinc-500 dark:text-zinc-400">
+                  <span className="shrink-0 pl-3 text-right text-zinc-500 dark:text-zinc-400">
                     {g.eventName} · R{g.round}
                   </span>
                 </li>
@@ -105,5 +108,16 @@ export default async function Home() {
         </div>
       </main>
     </div>
+  );
+}
+
+function PlayerWithFaction({ name, faction }: { name: string; faction: string | null }) {
+  return (
+    <span>
+      {name}
+      {faction && (
+        <span className="block text-xs text-zinc-500 dark:text-zinc-400">{faction}</span>
+      )}
+    </span>
   );
 }
