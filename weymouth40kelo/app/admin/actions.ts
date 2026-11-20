@@ -25,7 +25,7 @@ export async function syncEventAction(formData: FormData) {
     const result = await syncEvent(bcpEventId);
     redirect(
       `/admin?message=${encodeURIComponent(
-        `Synced "${result.eventName}": ${result.playersAdded} new players, ${result.gamesAdded} new games (${result.gamesSkipped} already synced).`
+        `Synced "${result.eventName}": ${result.playersAdded} new players, ${result.gamesAdded} new games (${result.gamesSkipped} already synced), ${result.gamesWithFaction} with faction data.`
       )}`
     );
   } catch (err) {

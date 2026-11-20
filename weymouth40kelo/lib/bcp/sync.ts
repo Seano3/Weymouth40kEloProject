@@ -1,6 +1,11 @@
 import "server-only";
 import { createServiceClient } from "@/lib/supabase/server";
-import { getBcpEvent, getBcpPairings, mapPairingToGame } from "@/lib/bcp/client";
+import {
+  getBcpEvent,
+  getBcpEventArmies,
+  getBcpPairings,
+  mapPairingToGame,
+} from "@/lib/bcp/client";
 import { recomputeRatings } from "@/lib/elo";
 import { updateTag } from "next/cache";
 
@@ -9,12 +14,14 @@ export type SyncResult = {
   playersAdded: number;
   gamesAdded: number;
   gamesSkipped: number;
+  gamesWithFaction: number;
 };
 
 /**
  * Pulls one BCP event's results into Supabase and recomputes ratings.
  * Idempotent: re-running on an already-synced event only adds new/changed
- * pairings (deduped on (event_id, bcp_pairing_id)).
+ * pairings (deduped on (event_id, bcp_pairing_id)). Faction columns are
+ * refreshed on already-synced games too, so re-syncing backfills them.
  *
  * Callable from the manual admin Server Action today, and from a future
  * scheduled route handler without changes.
@@ -23,9 +30,12 @@ export async function syncEvent(bcpEventId: string): Promise<SyncResult> {
   const supabase = createServiceClient();
 
   const bcpEvent = await getBcpEvent(bcpEventId);
-  const rawPairings = await getBcpPairings(bcpEventId, bcpEvent.numberOfRounds);
+  const [rawPairings, armies] = await Promise.all([
+    getBcpPairings(bcpEventId, bcpEvent.numberOfRounds),
+    getBcpEventArmies(bcpEventId),
+  ]);
   const games = rawPairings
-    .map(mapPairingToGame)
+    .map((raw) => mapPairingToGame(raw, armies))
     .filter((g): g is NonNullable<typeof g> => g !== null);
 
   const { data: eventRow, error: eventError } = await supabase
@@ -78,10 +88,19 @@ export async function syncEvent(bcpEventId: string): Promise<SyncResult> {
 
   let gamesAdded = 0;
   let gamesSkipped = 0;
+  let gamesWithFaction = 0;
 
   for (const game of games) {
     const player1Id = bcpIdToPlayerId.get(game.player1BcpId)!;
     const player2Id = bcpIdToPlayerId.get(game.player2BcpId)!;
+
+    const factionFields = {
+      player1_faction: game.player1Army.faction,
+      player1_sub_faction: game.player1Army.subFaction,
+      player2_faction: game.player2Army.faction,
+      player2_sub_faction: game.player2Army.subFaction,
+    };
+    if (game.player1Army.faction || game.player2Army.faction) gamesWithFaction++;
 
     const { error: insertError } = await supabase.from("games").insert({
       event_id: eventRow.id,
@@ -91,10 +110,18 @@ export async function syncEvent(bcpEventId: string): Promise<SyncResult> {
       player1_score: game.player1Score,
       player2_score: game.player2Score,
       bcp_pairing_id: game.bcpPairingId,
+      ...factionFields,
     });
 
     if (insertError) {
       if (insertError.code === "23505") {
+        // Already synced: leave scores alone, but refresh faction info.
+        const { error: updateError } = await supabase
+          .from("games")
+          .update(factionFields)
+          .eq("event_id", eventRow.id)
+          .eq("bcp_pairing_id", game.bcpPairingId);
+        if (updateError) throw updateError;
         gamesSkipped++;
         continue;
       }
@@ -111,5 +138,6 @@ export async function syncEvent(bcpEventId: string): Promise<SyncResult> {
     playersAdded,
     gamesAdded,
     gamesSkipped,
+    gamesWithFaction,
   };
 }

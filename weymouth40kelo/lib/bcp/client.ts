@@ -30,11 +30,16 @@ export async function getBcpEvent(bcpEventId: string): Promise<BcpEvent> {
   };
 }
 
+type RawPairingPlayer = {
+  id: string; // event-player id, matches RawEventPlayer.id
+  user: { id: string; firstName: string; lastName: string };
+};
+
 type RawPairing = {
   id: string;
   round: number;
-  player1?: { user: { id: string; firstName: string; lastName: string } };
-  player2?: { user: { id: string; firstName: string; lastName: string } };
+  player1?: RawPairingPlayer;
+  player2?: RawPairingPlayer;
   player1Game?: { points: number };
   player2Game?: { points: number };
 };
@@ -68,6 +73,45 @@ export async function getBcpPairings(
   return all;
 }
 
+type RawEventPlayer = {
+  id: string;
+  faction?: { id: string; name: string } | null;
+  subFaction?: { id: string; name: string } | null;
+};
+
+export type PlayerArmy = {
+  faction: string | null;
+  subFaction: string | null;
+};
+
+/**
+ * Pairings don't carry army info, but the event's player list does.
+ * GET /events/{eventId}/players?eventId={eventId}
+ * Returns { active: EventPlayer[], deleted: EventPlayer[] } with `faction`
+ * and `subFaction` set only when the player submitted a list (weekly events
+ * often have gaps). Keyed by event-player id, which is what pairings use as
+ * player1.id / player2.id.
+ */
+export async function getBcpEventArmies(
+  bcpEventId: string
+): Promise<Map<string, PlayerArmy>> {
+  const url = `${BCP_API_BASE}/events/${bcpEventId}/players?eventId=${encodeURIComponent(
+    bcpEventId
+  )}`;
+  const res = await fetch(url, { headers: headers() });
+  if (!res.ok) {
+    throw new Error(`BCP players failed: ${res.status} ${await res.text()}`);
+  }
+  const json = await res.json();
+  const players: RawEventPlayer[] = [...(json.active ?? []), ...(json.deleted ?? [])];
+  return new Map(
+    players.map((p) => [
+      p.id,
+      { faction: p.faction?.name ?? null, subFaction: p.subFaction?.name ?? null },
+    ])
+  );
+}
+
 export type MappedGame = {
   bcpPairingId: string;
   round: number;
@@ -77,7 +121,11 @@ export type MappedGame = {
   player2Name: string;
   player1Score: number;
   player2Score: number;
+  player1Army: PlayerArmy;
+  player2Army: PlayerArmy;
 };
+
+const NO_ARMY: PlayerArmy = { faction: null, subFaction: null };
 
 function fullName(user: { firstName: string; lastName: string }): string {
   return [user.firstName, user.lastName].filter(Boolean).join(" ") || "Unknown";
@@ -88,7 +136,10 @@ function fullName(user: { firstName: string; lastName: string }): string {
  * (missing opponent) or pairings with no recorded score yet — neither
  * should affect Elo.
  */
-export function mapPairingToGame(raw: RawPairing): MappedGame | null {
+export function mapPairingToGame(
+  raw: RawPairing,
+  armies: Map<string, PlayerArmy>
+): MappedGame | null {
   if (!raw.player1 || !raw.player2) return null;
   if (
     typeof raw.player1Game?.points !== "number" ||
@@ -106,5 +157,7 @@ export function mapPairingToGame(raw: RawPairing): MappedGame | null {
     player2Name: fullName(raw.player2.user),
     player1Score: raw.player1Game.points,
     player2Score: raw.player2Game.points,
+    player1Army: armies.get(raw.player1.id) ?? NO_ARMY,
+    player2Army: armies.get(raw.player2.id) ?? NO_ARMY,
   };
 }
