@@ -110,7 +110,8 @@ async function PlayerContent({
                     className="border-b border-black/5 dark:border-white/5"
                   >
                     <td className="py-2 pr-4 text-zinc-500 dark:text-zinc-400">
-                      {m.eventName} · R{m.round}
+                      {m.eventName}
+                    {m.round !== null && ` · R${m.round}`}
                       {m.eventDate && (
                         <span className="block text-xs text-zinc-400 dark:text-zinc-500">
                           {m.eventDate}

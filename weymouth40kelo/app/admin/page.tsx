@@ -4,7 +4,15 @@ import {
   toggleVisibilityAction,
   recomputeRatingsAction,
   logoutAction,
+  updateManualGameAction,
+  deleteManualGameAction,
 } from "./actions";
+import { GameFormFields } from "@/app/games/game-form-fields";
+import {
+  getKnownFactions,
+  getRegisteredPlayers,
+  listManualGames,
+} from "@/lib/manual-games";
 
 export const instant = false;
 
@@ -25,6 +33,12 @@ export default async function AdminPage({
     .from("events")
     .select("id, bcp_event_id, name, event_date, synced_at")
     .order("synced_at", { ascending: false });
+
+  const [manualGames, registeredPlayers, factions] = await Promise.all([
+    listManualGames(),
+    getRegisteredPlayers(),
+    getKnownFactions(),
+  ]);
 
   return (
     <div className="flex flex-1 justify-center bg-zinc-50 dark:bg-black">
@@ -94,6 +108,67 @@ export default async function AdminPage({
                       Re-sync
                     </button>
                   </form>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section id="manual-games" className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold text-black dark:text-zinc-50">
+            Manually added games
+          </h2>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            Games added through the public Add a Game page. They count as soon as
+            they&apos;re submitted; edit or delete any that are wrong.
+          </p>
+          {manualGames.length === 0 ? (
+            <p className="text-sm text-zinc-500">No manually added games yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-2 text-sm">
+              {manualGames.map((g) => (
+                <li
+                  key={g.id}
+                  className="rounded-md border border-black/5 dark:border-white/10"
+                >
+                  <details>
+                    <summary className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2">
+                      <span className="text-black dark:text-zinc-50">
+                        {g.player1Name} {g.player1Score} – {g.player2Score}{" "}
+                        {g.player2Name}
+                      </span>
+                      <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
+                        {g.playedOn} · Edit
+                      </span>
+                    </summary>
+                    <div className="flex flex-col gap-3 border-t border-black/5 px-3 py-3 dark:border-white/10">
+                      <form action={updateManualGameAction} className="flex flex-col gap-3">
+                        <input type="hidden" name="gameId" value={g.id} />
+                        <GameFormFields
+                          players={registeredPlayers}
+                          factions={factions}
+                          defaults={g}
+                        />
+                        <div>
+                          <button
+                            type="submit"
+                            className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+                          >
+                            Save changes
+                          </button>
+                        </div>
+                      </form>
+                      <form action={deleteManualGameAction}>
+                        <input type="hidden" name="gameId" value={g.id} />
+                        <button className="text-xs text-red-600 underline dark:text-red-400">
+                          Delete this game
+                        </button>
+                      </form>
+                      <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                        Submitted {g.createdAt.slice(0, 16).replace("T", " ")} UTC
+                      </p>
+                    </div>
+                  </details>
                 </li>
               ))}
             </ul>

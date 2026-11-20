@@ -8,6 +8,12 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { cookies } from "next/headers";
 import { ADMIN_COOKIE } from "@/lib/admin-token";
 import { revalidatePath, updateTag } from "next/cache";
+import {
+  getKnownFactions,
+  parseManualGame,
+  playersAreRegistered,
+  toGameRow,
+} from "@/lib/manual-games";
 
 function extractBcpEventId(input: string): string {
   const trimmed = input.trim();
@@ -66,4 +72,59 @@ export async function logoutAction() {
   const cookieStore = await cookies();
   cookieStore.delete(ADMIN_COOKIE);
   redirect("/admin/login");
+}
+
+/**
+ * Edits a manually added game. Scoped to source = 'manual' so BCP-synced
+ * games can't be changed here (a re-sync would be the place for those).
+ */
+export async function updateManualGameAction(formData: FormData) {
+  await requireAdmin();
+
+  const gameId = String(formData.get("gameId") ?? "");
+  const game = parseManualGame(formData, await getKnownFactions());
+  if (typeof game === "string") {
+    redirect(`/admin?error=${encodeURIComponent(game)}#manual-games`);
+  }
+  if (!(await playersAreRegistered([game.player1Id, game.player2Id]))) {
+    redirect(
+      `/admin?error=${encodeURIComponent("Both players must be registered on the leaderboard.")}#manual-games`
+    );
+  }
+
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("games")
+    .update(toGameRow(game))
+    .eq("id", gameId)
+    .eq("source", "manual")
+    .select("id");
+  if (error) throw error;
+  if (!data?.length) {
+    redirect(`/admin?error=${encodeURIComponent("That game no longer exists.")}#manual-games`);
+  }
+
+  await recomputeRatings();
+  revalidatePath("/admin");
+  updateTag("leaderboard");
+  redirect("/admin?message=Game+updated+and+ratings+recomputed.#manual-games");
+}
+
+export async function deleteManualGameAction(formData: FormData) {
+  await requireAdmin();
+
+  const gameId = String(formData.get("gameId") ?? "");
+  const supabase = createServiceClient();
+  // elo_history rows cascade with the game.
+  const { error } = await supabase
+    .from("games")
+    .delete()
+    .eq("id", gameId)
+    .eq("source", "manual");
+  if (error) throw error;
+
+  await recomputeRatings();
+  revalidatePath("/admin");
+  updateTag("leaderboard");
+  redirect("/admin?message=Game+deleted+and+ratings+recomputed.#manual-games");
 }

@@ -1,6 +1,10 @@
 import "server-only";
 import { cacheTag } from "next/cache";
 import { createServiceClient } from "@/lib/supabase/server";
+import { compareGamesChronologically } from "@/lib/elo";
+
+/** Shown in place of an event name for manually added games. */
+export const CASUAL_GAME_NAME = "Casual game";
 
 export type LeaderboardEntry = {
   id: string;
@@ -71,7 +75,8 @@ export async function getHiddenPlayers(): Promise<HiddenPlayer[]> {
 export type RecentGame = {
   id: string;
   eventName: string;
-  round: number;
+  /** Null for manually added games. */
+  round: number | null;
   player1Name: string;
   player2Name: string;
   player1Score: number;
@@ -93,14 +98,16 @@ export async function getRecentGames(limit = 10): Promise<RecentGame[]> {
   const { data, error } = await supabase
     .from("games")
     .select(
-      "id, round, player1_score, player2_score, player1_faction, player2_faction, events(name, event_date), player1:player1_id(display_name, visible), player2:player2_id(display_name, visible)"
+      "id, round, played_on, created_at, player1_score, player2_score, player1_faction, player2_faction, events(name, event_date), player1:player1_id(display_name, visible), player2:player2_id(display_name, visible)"
     );
   if (error) throw error;
 
   const rows = (data ?? []).map((g) => {
     const row = g as unknown as {
       id: string;
-      round: number;
+      round: number | null;
+      played_on: string | null;
+      created_at: string;
       player1_score: number;
       player2_score: number;
       player1_faction: string | null;
@@ -111,8 +118,8 @@ export async function getRecentGames(limit = 10): Promise<RecentGame[]> {
     };
     return {
       id: row.id,
-      eventName: row.events?.name ?? "Unknown event",
-      eventDate: row.events?.event_date ?? "",
+      eventName: row.events?.name ?? (row.played_on ? CASUAL_GAME_NAME : "Unknown event"),
+      sortKey: row,
       round: row.round,
       player1Visible: row.player1?.visible ?? false,
       player2Visible: row.player2?.visible ?? false,
@@ -127,10 +134,7 @@ export async function getRecentGames(limit = 10): Promise<RecentGame[]> {
 
   return rows
     .filter((r) => r.player1Visible || r.player2Visible)
-    .sort((a, b) => {
-      if (a.eventDate !== b.eventDate) return a.eventDate < b.eventDate ? 1 : -1;
-      return b.round - a.round;
-    })
+    .sort((a, b) => compareGamesChronologically(b.sortKey, a.sortKey))
     .slice(0, limit)
     .map((r) => ({
       id: r.id,
@@ -149,7 +153,8 @@ export type PlayerMatch = {
   id: string;
   eventName: string;
   eventDate: string | null;
-  round: number;
+  /** Null for manually added games. */
+  round: number | null;
   opponentName: string;
   opponentEloBefore: number;
   /** The player's own faction this game, if they submitted a list. */
@@ -193,7 +198,7 @@ export async function getPlayerDetail(playerId: string): Promise<PlayerDetail | 
   const { data: ownHistory, error: historyError } = await supabase
     .from("elo_history")
     .select(
-      "game_id, delta, rating_after, games(round, player1_id, player2_id, player1_score, player2_score, player1_faction, player2_faction, created_at, events(name, event_date))"
+      "game_id, delta, rating_after, games(round, played_on, player1_id, player2_id, player1_score, player2_score, player1_faction, player2_faction, created_at, events(name, event_date))"
     )
     .eq("player_id", playerId);
   if (historyError) throw historyError;
@@ -203,7 +208,8 @@ export async function getPlayerDetail(playerId: string): Promise<PlayerDetail | 
     delta: number;
     rating_after: number;
     games: {
-      round: number;
+      round: number | null;
+      played_on: string | null;
       player1_id: string;
       player2_id: string;
       player1_score: number;
@@ -253,12 +259,7 @@ export async function getPlayerDetail(playerId: string): Promise<PlayerDetail | 
 
   const matches: PlayerMatch[] = [];
 
-  const sorted = [...rows].sort((a, b) => {
-    const dateA = a.games?.events?.event_date ?? "";
-    const dateB = b.games?.events?.event_date ?? "";
-    if (dateA !== dateB) return dateA < dateB ? -1 : 1;
-    return (a.games?.round ?? 0) - (b.games?.round ?? 0);
-  });
+  const sorted = [...rows].sort((a, b) => compareGamesChronologically(a.games!, b.games!));
 
   for (const row of sorted) {
     const game = row.games!;
@@ -277,8 +278,8 @@ export async function getPlayerDetail(playerId: string): Promise<PlayerDetail | 
 
     matches.push({
       id: row.game_id,
-      eventName: game.events?.name ?? "Unknown event",
-      eventDate: game.events?.event_date ?? null,
+      eventName: game.events?.name ?? (game.played_on ? CASUAL_GAME_NAME : "Unknown event"),
+      eventDate: game.events?.event_date ?? game.played_on,
       round: game.round,
       opponentName: opponentVisible ? opponent!.displayName : HIDDEN_PLAYER_NAME,
       opponentEloBefore: Math.round(

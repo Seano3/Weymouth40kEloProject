@@ -84,7 +84,8 @@ export default async function Home() {
                     <PlayerWithFaction name={g.player2Name} faction={g.player2Faction} />
                   </span>
                   <span className="shrink-0 pl-3 text-right text-zinc-500 dark:text-zinc-400">
-                    {g.eventName} · R{g.round}
+                    {g.eventName}
+                    {g.round !== null && ` · R${g.round}`}
                   </span>
                 </li>
               ))}
@@ -93,6 +94,12 @@ export default async function Home() {
         )}
 
         <div className="flex flex-wrap justify-center gap-3">
+          <Link
+            href="/games/new"
+            className="rounded-md border border-black/15 px-4 py-2 text-sm font-medium text-black hover:bg-black/5 dark:border-white/15 dark:text-zinc-50 dark:hover:bg-white/5"
+          >
+            Add a game
+          </Link>
           <Link
             href="/factions"
             className="rounded-md border border-black/15 px-4 py-2 text-sm font-medium text-black hover:bg-black/5 dark:border-white/15 dark:text-zinc-50 dark:hover:bg-white/5"

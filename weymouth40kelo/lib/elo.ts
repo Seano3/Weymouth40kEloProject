@@ -27,13 +27,33 @@ export function computeEloUpdate({
 
 type GameRow = {
   id: string;
-  round: number;
+  round: number | null;
+  played_on: string | null;
+  created_at: string;
   player1_id: string;
   player2_id: string;
   player1_score: number;
   player2_score: number;
   events: { event_date: string | null } | null;
 };
+
+/**
+ * Event games are dated by their event and ordered by round; manually added
+ * games are dated by when they were played and, on a shared date, come after
+ * that day's event rounds, in the order they were entered.
+ */
+export function compareGamesChronologically(
+  a: Pick<GameRow, "round" | "played_on" | "created_at" | "events">,
+  b: Pick<GameRow, "round" | "played_on" | "created_at" | "events">
+): number {
+  const dateA = a.events?.event_date ?? a.played_on ?? "";
+  const dateB = b.events?.event_date ?? b.played_on ?? "";
+  if (dateA !== dateB) return dateA < dateB ? -1 : 1;
+  const roundA = a.round ?? Number.MAX_SAFE_INTEGER;
+  const roundB = b.round ?? Number.MAX_SAFE_INTEGER;
+  if (roundA !== roundB) return roundA - roundB;
+  return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0;
+}
 
 /**
  * Rebuilds elo_history and players.elo_rating/games_played from scratch by
@@ -46,9 +66,8 @@ export async function recomputeRatings() {
   const { data: games, error: gamesError } = await supabase
     .from("games")
     .select(
-      "id, round, player1_id, player2_id, player1_score, player2_score, events(event_date)"
+      "id, round, played_on, created_at, player1_id, player2_id, player1_score, player2_score, events(event_date)"
     )
-    .order("round", { ascending: true })
     .returns<GameRow[]>();
   if (gamesError) throw gamesError;
 
@@ -57,12 +76,7 @@ export async function recomputeRatings() {
     .select("id");
   if (playersError) throw playersError;
 
-  const sorted = [...(games ?? [])].sort((a, b) => {
-    const dateA = a.events?.event_date ?? "";
-    const dateB = b.events?.event_date ?? "";
-    if (dateA !== dateB) return dateA < dateB ? -1 : 1;
-    return a.round - b.round;
-  });
+  const sorted = [...(games ?? [])].sort(compareGamesChronologically);
 
   const ratings = new Map<string, number>();
   const gamesPlayed = new Map<string, number>();

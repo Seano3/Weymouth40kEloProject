@@ -6,6 +6,7 @@ import {
   type DispositionMatchups,
   type MatchupRecord,
 } from "@/lib/data";
+import { orderDispositions } from "@/lib/dispositions";
 import { SortableStatsTable } from "./sortable-stats-table";
 
 export const metadata: Metadata = {
@@ -92,28 +93,6 @@ export default async function FactionsPage() {
       </main>
     </div>
   );
-}
-
-/**
- * All 11th edition Force Dispositions, in matrix order, so every row and
- * column shows even before anyone has played it. A name from BCP replaces
- * the canonical one when it matches by prefix (in case BCP's spelling
- * differs); anything unrecognised is appended at the end.
- */
-const DISPOSITIONS: [prefix: string, name: string][] = [
-  ["Priority", "Priority Assets"],
-  ["Take", "Take and Hold"],
-  ["Recon", "Reconnaissance"],
-  ["Disrupt", "Disruption"],
-  ["Purge", "Purge the Foe"],
-];
-
-function orderDispositions(seen: string[]): string[] {
-  const names = DISPOSITIONS.map(
-    ([prefix, name]) => seen.find((s) => s.startsWith(prefix)) ?? name
-  );
-  const extras = seen.filter((s) => !names.includes(s)).sort();
-  return [...names, ...extras];
 }
 
 /** Green above 50%, red below, stronger the further from even. */
